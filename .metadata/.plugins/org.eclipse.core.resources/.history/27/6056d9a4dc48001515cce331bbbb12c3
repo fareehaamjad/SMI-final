@@ -1,0 +1,57 @@
+package com.example.securemobileidentity;
+
+import java.util.ArrayList;
+
+import android.app.Activity;
+import android.content.Context;
+import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.Vibrator;
+import android.util.Log;
+
+public class NotificationActivity extends Activity 
+{
+	Context context;
+	
+	@Override
+	protected void onCreate(Bundle savedInstanceState) 
+	{
+		super.onCreate(savedInstanceState);
+		setContentView(R.layout.activity_main);
+		
+		Constants.isAppRunning = true;
+
+		Constants.root 			= Environment.getExternalStorageDirectory().getAbsolutePath();
+
+		Constants.allServerMsgs = new ArrayList<String>();
+		
+		context = this;
+		
+		Constants.viberate = (Vibrator) this.context.getSystemService(Context.VIBRATOR_SERVICE);
+	
+
+		s= Constants.getDefaultSharedPreferences(context);
+		if (s.getString(Constants.pref_phone_no, null) == null)
+		{
+			Log.i("phone number", "getting phone number from user: should only happen once!!");
+			getPhoneNo(this);
+		}
+		else
+		{
+			prepareList();
+		}
+		
+		Constants.createDirectories();
+
+		// Crash log
+		CrashReport errReporter = new CrashReport();
+		errReporter.Init(this);
+		errReporter.CheckErrorAndSendMail(this);
+
+
+
+
+	}
+
+}

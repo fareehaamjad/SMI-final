@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="?android:attr/listPreferredItemHeight"
+    android:orientation="horizontal"
+    android:paddingBottom="3dp"
+    android:paddingRight="5dp"
+    android:paddingLeft="10dp"
+    android:paddingTop="3dp" >
+
+    <TextView
+        android:id="@+id/tv_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_weight="1"
+        android:text="Fareeha Amjad"
+        android:textColor="#000000" />
+
+    <ImageView
+        android:id="@+id/iv_issmi"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="false"
+        android:src="@drawable/ic_launcher" />
+
+</LinearLayout>

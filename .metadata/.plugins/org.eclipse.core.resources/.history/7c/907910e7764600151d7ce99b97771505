@@ -1,0 +1,253 @@
+package com.example.securemobileidentity;
+
+import java.io.UnsupportedEncodingException;
+import java.util.Date;
+
+import android.content.Intent;
+import android.telephony.PhoneNumberUtils;
+import android.util.Log;
+import android.widget.Toast;
+
+public class ProcessMessage 
+{
+	static String className = "ProcessMessage";
+
+	public static void addMsg(Message msg) throws Exception 
+	{
+		Log.i(className, msg.number);
+
+		//check what the message is about
+		String[] split = msg.message.split(Constants.separator);
+		int index = 0;
+
+		String header = split[index++];
+		if (header.equals(Constants.HEADER_METADATA))
+		{
+			
+			Constants.exchangeKeysTrying = true;
+			Log.i("metadata", "Got meta-data    " +msg.message);
+
+			//send a reply: new metadata, new nonce, public key, public modulus, signed metadata + nonce of sender
+			replyMetadata(msg.message);
+			
+			Constants.contactSelected = Constants.findContact(msg.number);
+			Intent intent = new Intent(MainActivity.context, SMSActivity.class);
+			intent.putExtra("method","sms");
+			MainActivity.context.startActivity(intent);
+
+
+		}
+		else if (header.equals(Constants.HEADER_REPLY_METADATA))
+		{
+			Log.i("reply metadata", "Got reply meta-data");
+			Log.i("reply meta data msg", msg.message);
+			//metadata
+			String encryptMsg = split[index++];
+			//publickey
+			String publicKeyOfSender = split[index++];
+			//nonce
+			encryptMsg += ",";
+			encryptMsg += split[index++];
+
+			//the encrytpted challenge reply
+			String encChallange = split[index++];
+			Log.i("got encrypted challange",encChallange );
+
+			String challenge = Constants.encryptionManager.decrypt(encChallange, publicKeyOfSender);
+
+			String actualChallenge = getChallenge(msg.number);
+
+			Constants.dbHandler.deleteChallange(msg.number);
+
+			Log.i("challenge",challenge);
+			Log.i("actual challenge", actualChallenge);
+
+			if (actualChallenge.equals(challenge))
+			{
+				Log.i("equal", "the challenge and the challenge reply are equal");
+
+				RreplyMetadata(encryptMsg, msg.number);
+				//DisplayOptions.status.setText("Challenge equal!!");
+				//MainActivity.exchangeKeys = true;
+				//sendPicture(msg.number);
+				//connectionText.setText("Connection established!");
+				Constants.dbHandler.addNewKey(msg.number, publicKeyOfSender);
+
+				Constants.exchangesuccessful = true;
+			}
+			else
+			{
+
+				//DisplayOptions.status.setText("Challenge NOT equal!!");
+				Log.i("not equal", "the challenge and the challenge reply are not equal");
+			
+				
+				Constants.exchangesuccessful = false;
+				//exchangeKeys = false;
+			}
+			
+
+			Constants.exchangeKeysTrying = false;
+
+		}
+		else if (header.equals(Constants.HEADER_VERIFY_META))
+		{
+			Log.i("verify meta", "Got verify meta-data    "+msg.message);
+
+			String encChallange = split[index++];
+
+			String publicKey = Constants.dbHandler.getTempKey(msg.number);
+
+
+			Constants.dbHandler.deleteTempKey(msg.number);
+			String actualChallenge = getChallenge(msg.number);
+
+			String challenge = Constants.encryptionManager.decrypt(encChallange, publicKey);
+
+			Constants.dbHandler.deleteChallange(msg.number);
+
+			Log.i("challenge",challenge);
+			Log.i("actual challenge", actualChallenge);
+
+			if (actualChallenge.equals(challenge))
+			{
+				Log.i("equal", "the challenge and the challenge reply are equal");
+
+				//Toast.makeText(context,"Challenge equal!!", Toast.LENGTH_LONG).show();
+				//MainActivity.exchangeKeys = true;
+				//connectionText.setText("Connection established!");
+				Constants.dbHandler.addNewKey(msg.number, publicKey);
+				
+				Constants.exchangesuccessful = true;
+				
+			}
+			else
+			{
+				//Toast.makeText(context,"Challenge NOT equal!!", Toast.LENGTH_LONG).show();
+				Log.i("not equal", "the challenge and the challenge reply are not equal");
+				
+				Constants.exchangesuccessful = false;
+				//exchangeKeysTrying = false;
+			}
+			
+			Constants.exchangeKeysTrying = false;
+
+
+		}
+		else
+		{
+			
+			Log.i("got encrypted message", msg.message);
+			
+			String publicKey = Constants.dbHandler.getKey(msg.number);
+			
+			String message =  Constants.encryptionManager.decrypt(msg.message, publicKey);
+			
+			Log.i("test", "The message is: " + message);
+			
+			Message msgRec = new Message();
+			msgRec.message = message;
+			msgRec.number = msg.number;
+			msgRec.time = new Date();
+			msgRec.type = Constants.UserType.OTHER;
+			
+			Constants.dbHandler.addNewMsg(msgRec);
+			
+			if (Constants.isChatOpen)
+			{
+				Log.i("test", "chat is open");
+				if (PhoneNumberUtils.compare(Constants.contactSelected.number, msgRec.number))
+				{
+					Log.i("test", "chat is open");
+					Constants.allMsgs.add(msgRec);
+					Log.i("test", "message is added");
+					SMSActivity.adapter.notifyDataSetChanged();
+				}
+			}
+			
+			
+		}
+
+	}
+
+	private static void RreplyMetadata(String encryptMsg, String number) throws Exception 
+	{
+		Log.i("This is what is being encrypted here", encryptMsg);
+		//encrypt using the user's own public key
+		String encoded = Constants.encryptionManager.encrypt(encryptMsg);
+		Log.i("Encoded string", encoded);
+
+		String msg = Constants.HEADER_VERIFY_META +Constants.separator + encoded;
+
+		SendSMS.sendSMSMessage(msg, MainActivity.context, number);
+		//sendLongSMS(msg, number) ;     
+	}
+
+
+	private static String getChallenge(String number) 
+	{
+		return Constants.dbHandler.getChallenge(number);
+	}
+
+	private static void replyMetadata(String message) throws Exception 
+	{
+		String metadata = Constants.getMetaData(Constants.HEADER_REPLY_METADATA);
+		String _nonce = Constants.getNonce();
+		String rep_metadata = metadata + Constants.getPublicKey() + _nonce;
+
+		String[] split = message.split(Constants.separator);
+
+		Log.i("Test Message", message);
+
+
+		String meta = split[1];
+		String pub = split[2];
+		String nonce = split[3];
+
+
+		String encryptMsg = meta + "," + nonce;
+
+		Log.i("This is what is being encrypted here", encryptMsg);
+		//encrypt using the user's own public key
+		String encoded = null;
+		try 
+		{
+			encoded = Constants.encryptionManager.encrypt(encryptMsg);
+		} catch (UnsupportedEncodingException e) {
+
+			e.printStackTrace();
+		}
+
+
+		Log.i("After encryption", encoded);
+
+
+		String publicKeyOfSender = Constants.getPublicKey();
+		publicKeyOfSender = publicKeyOfSender.replaceFirst(Constants.separator, "");
+
+
+		rep_metadata += encoded;
+		rep_metadata += Constants.separator;
+
+		String[] split2 = meta.split("--");
+		String fromNo = split2[0];
+
+		//store challenge with number
+		String metaD =  metadata.replaceFirst(Constants.HEADER_REPLY_METADATA+Constants.separator, "");
+		String challenge = metaD + "," + _nonce;
+		challenge = challenge.replace(Constants.separator, "");
+
+		String challengeNo = fromNo;
+		Constants.dbHandler.addNewChallange(challengeNo, challenge);
+
+		//storing keys temp
+		Constants.dbHandler.AddNewTempKeys(fromNo, pub);
+
+		Log.i("Replying metadata", rep_metadata);
+		Log.i("Replying to", fromNo);
+
+		SendSMS.sendSMSMessage(rep_metadata, MainActivity.context, fromNo);
+		
+	}
+
+}
