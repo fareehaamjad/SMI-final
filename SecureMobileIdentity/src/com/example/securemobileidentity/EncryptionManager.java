@@ -95,6 +95,7 @@ public class EncryptionManager {
 	
 	public String decrypt(String encryptedText, String PubkeyAsString)
 	{
+		Log.i("test", "in the decrypted message func");
 		String decryptedText = "";
 		
 		

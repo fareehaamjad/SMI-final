@@ -1,12 +1,14 @@
 package com.example.securemobileidentity;
 
-import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.preference.PreferenceManager;
+import android.support.v4.app.NotificationCompat;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.SmsMessage;
 import android.util.Log;
@@ -60,13 +62,53 @@ public class SMSReceiver extends BroadcastReceiver
 				mesg.number = number;
 				mesg.message = msg;
 
-				try {
-					ProcessMessage.addMsg(mesg);
-				} catch (Exception e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+				if (Constants.isAppRunning)
+				{
+					try 
+					{
+						ProcessMessage.addMsg(mesg);
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+
+					Toast.makeText(context, "message received", Toast.LENGTH_SHORT).show();
 				}
-				Toast.makeText(context, "message received", Toast.LENGTH_SHORT).show();
+				else
+				{
+					//notify using notification thing
+					
+					//check what the message is about
+					String[] split = mesg.message.split(Constants.separator);
+					int index = 0;
+
+					String header = split[index++];
+					
+					Constants.msgRec = mesg;
+					if (header.equals(Constants.HEADER_METADATA))
+					{
+						showNotificationHandshake(context); 
+					}
+					else if (header.equals(Constants.HEADER_REPLY_METADATA))
+					{
+						//do nothing
+					}
+					else if (header.equals(Constants.HEADER_VERIFY_META))
+					{
+						//do nothing
+					}
+					else
+					{
+						showNotificationMessage(context); 
+					}
+					
+					
+					
+				}
+
+				Log.i("sms r" , "msg received");
+				Log.i("sms r" , "is app running " + Constants.isAppRunning);
+
 				abortBroadcast();
 			}
 
@@ -74,6 +116,52 @@ public class SMSReceiver extends BroadcastReceiver
 		}
 
 
+
+	}
+
+	private void showNotificationHandshake(Context context) 
+	{
+		Intent mainIntent = new Intent(context, MainActivity.class); 
+		mainIntent.putExtra("what", "handshake");
+		PendingIntent contentIntent = PendingIntent.getActivity(context, 0,
+				mainIntent, PendingIntent.FLAG_CANCEL_CURRENT);
+
+		
+		
+		NotificationCompat.Builder mBuilder =
+				new NotificationCompat.Builder(context)
+		.setSmallIcon(R.drawable.ic_launcher)
+		.setContentTitle("New handshake request")
+		.setContentText("You have a new handshake request. Click to find out more.");
+		mBuilder.setContentIntent(contentIntent);
+		mBuilder.setDefaults(Notification.DEFAULT_SOUND);
+		mBuilder.setAutoCancel(true);
+		NotificationManager mNotificationManager =
+				(NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+		mNotificationManager.notify(1, mBuilder.build());
+
+	} 
+	
+	private void showNotificationMessage(Context context) 
+	{
+		Intent mainIntent = new Intent(context, MainActivity.class); 
+		mainIntent.putExtra("what", "message");
+		PendingIntent contentIntent = PendingIntent.getActivity(context, 0,
+				mainIntent, PendingIntent.FLAG_CANCEL_CURRENT);
+
+		
+		
+		NotificationCompat.Builder mBuilder =
+				new NotificationCompat.Builder(context)
+		.setSmallIcon(R.drawable.ic_launcher)
+		.setContentTitle("New message")
+		.setContentText("You have a new message from your friend.");
+		mBuilder.setContentIntent(contentIntent);
+		mBuilder.setDefaults(Notification.DEFAULT_SOUND);
+		mBuilder.setAutoCancel(true);
+		NotificationManager mNotificationManager =
+				(NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+		mNotificationManager.notify(1, mBuilder.build());
 
 	}
 

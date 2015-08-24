@@ -6,6 +6,7 @@ import java.util.Date;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.os.Handler;
 import android.telephony.PhoneNumberUtils;
 import android.util.Log;
 import android.widget.Toast;
@@ -30,7 +31,7 @@ public class ProcessMessage
 				Contact c = Constants.findContact(msg.number);
 
 				Constants.contactsVisited.remove(c);
-				
+
 				new AlertDialog.Builder(Constants.currentContext)
 				.setTitle("Handshake Request")
 				.setMessage((c.name == null || c.name.equals("") ? c.number : c.name) + " would like to exchange keys with you. Would you like to continue?")
@@ -104,7 +105,7 @@ public class ProcessMessage
 				//MainActivity.exchangeKeys = true;
 				//sendPicture(msg.number);
 				//connectionText.setText("Connection established!");
-				
+
 				Constants.timeStart = 0;
 				Constants.dbHandler.addNewKey(msg.number, publicKeyOfSender);
 
@@ -112,7 +113,7 @@ public class ProcessMessage
 			}
 			else
 			{
-				
+
 				Constants.timeStart = 0;
 
 				//DisplayOptions.status.setText("Challenge NOT equal!!");
@@ -184,38 +185,96 @@ public class ProcessMessage
 
 			String publicKey = Constants.dbHandler.getKey(msg.number);
 
-			String message =  Constants.encryptionManager.decrypt(msg.message, publicKey);
-
-			Log.i("test", "The message is: " + message);
-
-			Message msgRec = new Message();
-			msgRec.message = message;
-			msgRec.number = msg.number;
-			msgRec.time = new Date();
-			msgRec.type = Constants.UserType.OTHER;
-			msgRec.isRead = false;
-
-			Constants.dbHandler.addNewMsg(msgRec);
-
-			if (Constants.isChatOpen)
+			if (publicKey.equalsIgnoreCase("null"))
 			{
-				Log.i("test", "chat is open");
-				if (PhoneNumberUtils.compare(Constants.contactSelected.number, msgRec.number))
+				/*1- save message
+				2- send handshake request
+				3- retrieve message*/
+				Contact c = Constants.findContact(msg.number);
+				Constants.contactsVisited.remove(c);
+
+				Constants.unread_unknown.add(msg);
+
+				new AlertDialog.Builder(Constants.currentContext)
+				.setTitle("Handshake Request")
+				.setMessage((c.name == null || c.name.equals("") ? c.number : c.name) + " has sent you a message. Would you like to start key exchange?")
+				.setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() 
+				{
+					public void onClick(DialogInterface dialog, int which) 
+					{ 
+						Constants.exchangeKeysTrying = true;
+						Log.i("metadata", "Got meta-data    " +msg.message);
+
+						//send a reply: new metadata, new nonce, public key, public modulus, signed metadata + nonce of sender
+						try 
+						{
+
+							Constants.contactSelected = Constants.findContact(msg.number);
+							Handler mHandler = new Handler();
+							SMSActivity.exchangeKeys(mHandler, Constants.currentContext);
+						} catch (Exception e) 
+						{
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+
+						Constants.timeStart = System.nanoTime();
+						Constants.contactSelected = Constants.findContact(msg.number);
+						Intent intent = new Intent(MainActivity.context, SMSActivity.class);
+						intent.putExtra("method","sms");
+						MainActivity.context.startActivity(intent);
+					}
+				})
+				.setNegativeButton(android.R.string.no, new DialogInterface.OnClickListener() 
+				{
+					public void onClick(DialogInterface dialog, int which) 
+					{ 
+						// do nothing
+					}
+				})
+				.setIcon(android.R.drawable.ic_dialog_alert)
+				.show()
+				.setCancelable(false);
+
+
+			}
+			else
+			{
+				String message =  Constants.encryptionManager.decrypt(msg.message, publicKey);
+
+				Log.i("test", "The message is: " + message);
+
+				Message msgRec = new Message();
+				msgRec.message = message;
+				msgRec.number = msg.number;
+				msgRec.time = new Date();
+				msgRec.type = Constants.UserType.OTHER;
+				msgRec.isRead = false;
+
+				Constants.dbHandler.addNewMsg(msgRec);
+
+				if (Constants.isChatOpen)
 				{
 					Log.i("test", "chat is open");
-					Constants.allMsgs.add(msgRec);
-					Log.i("test", "message is added");
-					SMSActivity.adapter.notifyDataSetChanged();
+					if (PhoneNumberUtils.compare(Constants.contactSelected.number, msgRec.number))
+					{
+						Log.i("test", "chat is open");
+						Constants.allMsgs.add(msgRec);
+						Log.i("test", "message is added");
+						SMSActivity.adapter.notifyDataSetChanged();
 
-					msgRec.isRead = true;
-					Constants.dbHandler.updateStatusOfMsg(msgRec);
+						msgRec.isRead = true;
+						Constants.dbHandler.updateStatusOfMsg(msgRec);
+					}
+				}
+
+				if (Constants.isContactListOpen)
+				{
+					MainActivity.listAdapter.notifyDataSetChanged();
 				}
 			}
-			
-			if (Constants.isContactListOpen)
-			{
-				MainActivity.listAdapter.notifyDataSetChanged();
-			}
+
+
 
 
 		}
@@ -241,7 +300,7 @@ public class ProcessMessage
 		return Constants.dbHandler.getChallenge(number);
 	}
 
-	private static void replyMetadata(String message) throws Exception 
+	static void replyMetadata(String message) throws Exception 
 	{
 		String metadata = Constants.getMetaData(Constants.HEADER_REPLY_METADATA);
 		String _nonce = Constants.getNonce();

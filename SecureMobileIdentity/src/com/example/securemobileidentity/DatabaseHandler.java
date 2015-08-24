@@ -281,7 +281,7 @@ public class DatabaseHandler extends SQLiteOpenHelper
 				if (!Constants.isContactRead(number))
 				{
 					Contact c = new Contact(number, number, true);
-					MainActivity.allContacts.add(c);
+					Constants.allContacts.add(c);
 				}
 				
 			} while (cursor.moveToNext());

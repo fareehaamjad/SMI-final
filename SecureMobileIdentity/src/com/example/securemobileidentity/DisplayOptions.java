@@ -79,7 +79,7 @@ import android.widget.Toast;
 		else if (v.getId() == R.id.button_data)
 		{
 			final TextView t = (TextView) findViewById(R.id.button_data);
-			t.setTextColor(R.color.blue);
+			t.setBackgroundColor(R.color.blue);
 
 			new Thread(){
 				@Override

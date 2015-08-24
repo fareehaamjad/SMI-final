@@ -43,7 +43,12 @@ public class Constants
 	public static ArrayList<String> allServerMsgs;
 
 	public static Contact contactSelected;
-
+	
+	public static Message msgRec;
+	
+	//this array is to be checked after every handshake to see if there are any messages in it!!
+	public static ArrayList<Message> unread_unknown = new ArrayList<Message>();
+	
 	static Vibrator viberate;
 
 	//this is to prevent infinite wait
@@ -74,6 +79,11 @@ public class Constants
 
 	//this array list should contain all messages of the opened chat
 	public static ArrayList<Message> allMsgs = new ArrayList<Message>();
+
+	// ArrayList for Listview
+	public static ArrayList<Contact> allContacts = new ArrayList<Contact>();
+
+
 
 
 	//to limit number of handshakes per session
@@ -149,7 +159,7 @@ public class Constants
 	public static Contact findContact(String number) 
 	{
 		Contact c = null;
-		for (Contact con : MainActivity.allContacts)
+		for (Contact con : Constants.allContacts)
 		{
 			if (PhoneNumberUtils.compare(con.number, number))
 			{
@@ -170,7 +180,7 @@ public class Constants
 	public static boolean isContactRead(String number)
 	{
 		Contact c = null;
-		for (Contact con : MainActivity.allContacts)
+		for (Contact con : Constants.allContacts)
 		{
 			if (PhoneNumberUtils.compare(con.number, number))
 			{

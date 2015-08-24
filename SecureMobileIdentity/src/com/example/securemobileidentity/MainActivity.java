@@ -2,6 +2,7 @@ package com.example.securemobileidentity;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Date;
 
 import org.apache.http.ParseException;
 
@@ -17,9 +18,11 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Vibrator;
 import android.preference.PreferenceManager;
 import android.provider.ContactsContract;
+import android.telephony.PhoneNumberUtils;
 import android.telephony.TelephonyManager;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -43,9 +46,6 @@ public class MainActivity extends Activity
 	// Search EditText
 	EditText inputSearch;
 
-	// ArrayList for Listview
-	public static ArrayList<Contact> allContacts;
-
 	public static CustomListViewAdapter listAdapter = null;
 
 	public static SharedPreferences s;
@@ -58,6 +58,8 @@ public class MainActivity extends Activity
 	LoadContacts mTask1 = null;
 
 	private Handler mHandler;
+
+	String what = "";
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) 
@@ -73,6 +75,16 @@ public class MainActivity extends Activity
 		mHandler = new Handler();
 
 		context = this;
+		try
+		{
+			what = getIntent().getStringExtra("what");
+			Log.i("test", "pre post what is " + what);
+		}
+		catch(Exception e)
+		{
+			//ignore
+		}
+
 
 		Constants.viberate = (Vibrator) this.context.getSystemService(Context.VIBRATOR_SERVICE);
 
@@ -94,8 +106,6 @@ public class MainActivity extends Activity
 		CrashReport errReporter = new CrashReport();
 		errReporter.Init(this);
 		errReporter.CheckErrorAndSendMail(this);
-
-
 
 
 	}
@@ -329,7 +339,7 @@ public class MainActivity extends Activity
 
 
 				Contact contact = new Contact(name, contactNumber, true);
-				allContacts.add(contact);                
+				Constants.allContacts.add(contact);                
 
 
 
@@ -450,6 +460,8 @@ public class MainActivity extends Activity
 			}
 
 
+
+
 			/*Constants.myExistingOffer = msg;
 			MainActivity.myOffers.setText(Constants.myExistingOffer);*/
 
@@ -478,8 +490,6 @@ public class MainActivity extends Activity
 
 			lv = (ListView) findViewById(R.id.lv_list_view);
 			inputSearch = (EditText) findViewById(R.id.et_inputSearch);
-
-			allContacts = new ArrayList<Contact>();
 
 			Constants.dbHandler = new DatabaseHandler(context);
 			super.onPreExecute();
@@ -535,7 +545,7 @@ public class MainActivity extends Activity
 			ll_main.setVisibility(View.VISIBLE);
 
 			// Adding items to listview
-			listAdapter = new CustomListViewAdapter(context, R.layout.contact_row, allContacts);
+			listAdapter = new CustomListViewAdapter(context, R.layout.contact_row, Constants.allContacts);
 			lv.setAdapter(listAdapter); 
 
 
@@ -562,7 +572,7 @@ public class MainActivity extends Activity
 					// When user changed the Text
 					//MainActivity.this.listAdapter.getFilter().filter(cs);   
 					Log.d("*** Search value changed: " , cs.toString());
-					listAdapter.doFilter(lv, cs.toString(), allContacts);
+					listAdapter.doFilter(lv, cs.toString(), Constants.allContacts);
 				}
 
 				@Override
@@ -576,11 +586,146 @@ public class MainActivity extends Activity
 				public void afterTextChanged(Editable s) 
 				{
 					Log.d("*** Search value changedjfjfgjfgjfgjfgj: " , s.toString());
-					listAdapter.doFilter(lv, s.toString(), allContacts);                  
+					listAdapter.doFilter(lv, s.toString(), Constants.allContacts);                  
 				}
 
 
 			});
+
+			try
+			{
+
+
+				Log.i("test", "what is " + what);
+
+				if (what.equals("handshake"))
+				{
+					Contact c = Constants.findContact(Constants.msgRec.number);
+					Constants.contactsVisited.remove(c);
+					Constants.exchangeKeysTrying = true;
+					try 
+					{
+						Constants.contactSelected = c;
+						SMSActivity.exchangeKeys(mHandler, context);
+					} catch (Exception e) 
+					{
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+
+					Constants.timeStart = System.nanoTime();
+					Constants.contactSelected = Constants.findContact(Constants.msgRec.number);
+					Intent intent = new Intent(MainActivity.context, SMSActivity.class);
+					intent.putExtra("method","sms");
+					MainActivity.context.startActivity(intent);
+
+				}
+				else if (what.equals("message"))
+				{
+					String[] split = Constants.msgRec.message.split(Constants.separator);
+					Constants.msgRec.message = split[1];
+					Log.i("got encrypted message", Constants.msgRec.message);
+
+					// Vibrate for 500 milliseconds
+					Constants.viberate.vibrate(500);
+
+					String publicKey = Constants.dbHandler.getKey(Constants.msgRec.number);
+
+					if (publicKey.equalsIgnoreCase("null"))
+					{
+						/*1- save message
+					2- send handshake request
+					3- retrieve message*/
+						final Contact c = Constants.findContact(Constants.msgRec.number);
+						Constants.contactsVisited.remove(c);
+
+						Constants.unread_unknown.add(Constants.msgRec);
+
+						new AlertDialog.Builder(Constants.currentContext)
+						.setTitle("Handshake Request")
+						.setMessage((c.name == null || c.name.equals("") ? c.number : c.name) + " has sent you a message. Would you like to start key exchange?")
+						.setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() 
+						{
+							public void onClick(DialogInterface dialog, int which) 
+							{ 
+								Constants.exchangeKeysTrying = true;
+								Log.i("metadata", "Got meta-data    " +Constants.msgRec.message);
+
+								//send a reply: new metadata, new nonce, public key, public modulus, signed metadata + nonce of sender
+								try 
+								{
+									Constants.contactSelected = c;
+									SMSActivity.exchangeKeys(mHandler, context);
+								} catch (Exception e) 
+								{
+									// TODO Auto-generated catch block
+									e.printStackTrace();
+								}
+
+								Constants.timeStart = System.nanoTime();
+								Constants.contactSelected = Constants.findContact(Constants.msgRec.number);
+								Intent intent = new Intent(MainActivity.context, SMSActivity.class);
+								intent.putExtra("method","sms");
+								MainActivity.context.startActivity(intent);
+							}
+						})
+						.setNegativeButton(android.R.string.no, new DialogInterface.OnClickListener() 
+						{
+							public void onClick(DialogInterface dialog, int which) 
+							{ 
+								// do nothing
+							}
+						})
+						.setIcon(android.R.drawable.ic_dialog_alert)
+						.show()
+						.setCancelable(false);
+
+
+					}
+					else
+					{
+						Log.i("test", "the key is found. we are in else statement");
+						Log.i("test", "decrypting: " + Constants.msgRec.message);
+						String message =  Constants.encryptionManager.decrypt(Constants.msgRec.message, publicKey);
+
+						Log.i("test", "The message is: " + message);
+
+						Message msgRec = new Message();
+						msgRec.message = message;
+						msgRec.number = Constants.msgRec.number;
+						msgRec.time = new Date();
+						msgRec.type = Constants.UserType.OTHER;
+						msgRec.isRead = false;
+
+						Constants.dbHandler.addNewMsg(msgRec);
+
+						if (Constants.isChatOpen)
+						{
+							Log.i("test", "chat is open");
+							if (PhoneNumberUtils.compare(Constants.contactSelected.number, msgRec.number))
+							{
+								Log.i("test", "chat is open");
+								Constants.allMsgs.add(msgRec);
+								Log.i("test", "message is added");
+								SMSActivity.adapter.notifyDataSetChanged();
+
+								msgRec.isRead = true;
+								Constants.dbHandler.updateStatusOfMsg(msgRec);
+							}
+						}
+
+						if (Constants.isContactListOpen)
+						{
+							MainActivity.listAdapter.notifyDataSetChanged();
+						}
+					}
+				}
+			}
+			catch(Exception e)
+			{
+				//do nothing!
+			}
+
 		}
 
 

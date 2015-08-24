@@ -12,6 +12,7 @@ import android.content.Context;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
+import android.telephony.PhoneNumberUtils;
 import android.text.format.Time;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -33,8 +34,8 @@ public class SMSActivity  extends Activity
 	TextView name;
 	EditText text;
 
-	Context context;
-	private Handler mHandler;
+	static Context context;
+	private static Handler mHandler;
 
 	ListView msgs;
 
@@ -173,6 +174,49 @@ public class SMSActivity  extends Activity
 	{
 		onBackPressed();
 	}
+	
+	public static  void exchangeKeys(Handler handler, final Context con) 
+	{
+		Constants.exchangeKeysTrying = true;
+		//generating nonce
+		String nonce = Constants.getNonce();
+
+		//generating meta-data
+		String metadata = Constants.getMetaData(Constants.HEADER_METADATA);
+
+		//fetching public key and public modulus
+		String publicKey = Constants.getPublicKey();
+
+		//store challenge with number
+		String metaD =  metadata.replace(Constants.HEADER_METADATA, "");
+
+		Log.i("meta after replacing", metaD);
+
+		String challenge = metaD + "," + nonce;
+		challenge = challenge.replace(Constants.separator, "");
+
+
+
+		final String challengeNo = Constants.contactSelected.number;
+		Constants.dbHandler.addNewChallange(challengeNo, challenge);
+
+		final String message = metadata + publicKey + nonce;
+
+		Log.i("message to send", message);
+
+		handler.post(new Runnable() { // This thread runs in the UI
+			@Override
+			public void run() {
+
+
+				SendSMS.sendSMSMessage(message, con, challengeNo);
+			}
+		});
+
+
+
+	}
+
 
 	class WaitForKeyExchange extends AsyncTask<String, String, String>
 	{
@@ -210,7 +254,7 @@ public class SMSActivity  extends Activity
 				if ( !Constants.exchangeKeysTrying )
 				{
 					Constants.timeStart = System.nanoTime();
-					exchangeKeys();
+					exchangeKeys(mHandler, context);
 				}
 
 
@@ -248,48 +292,7 @@ public class SMSActivity  extends Activity
 
 
 
-		private void exchangeKeys() 
-		{
-			Constants.exchangeKeysTrying = true;
-			//generating nonce
-			String nonce = Constants.getNonce();
-
-			//generating meta-data
-			String metadata = Constants.getMetaData(Constants.HEADER_METADATA);
-
-			//fetching public key and public modulus
-			String publicKey = Constants.getPublicKey();
-
-			//store challenge with number
-			String metaD =  metadata.replace(Constants.HEADER_METADATA, "");
-
-			Log.i("meta after replacing", metaD);
-
-			String challenge = metaD + "," + nonce;
-			challenge = challenge.replace(Constants.separator, "");
-
-
-
-			final String challengeNo = Constants.contactSelected.number;
-			Constants.dbHandler.addNewChallange(challengeNo, challenge);
-
-			final String message = metadata + publicKey + nonce;
-
-			Log.i("message to send", message);
-
-			mHandler.post(new Runnable() { // This thread runs in the UI
-				@Override
-				public void run() {
-
-
-					SendSMS.sendSMSMessage(message, context, challengeNo);
-				}
-			});
-
-
-
-		}
-
+		
 
 
 
@@ -331,6 +334,50 @@ public class SMSActivity  extends Activity
 				{
 					// TODO Auto-generated catch block
 					e.printStackTrace();
+				}
+				
+				
+				//always check this array for messages and remove those messages when read
+				
+				for (int i = 0; i < Constants.unread_unknown.size(); i++)
+				{
+					Message m = Constants.unread_unknown.get(i);
+					if (PhoneNumberUtils.compare(m.number, Constants.contactSelected.number))
+					{
+						String publicKey = Constants.dbHandler.getKey(m.number);
+						String message =  Constants.encryptionManager.decrypt(m.message, publicKey);
+
+						Log.i("test", "The message is: " + message);
+
+						Message msgRec = new Message();
+						msgRec.message = message;
+						msgRec.number = m.number;
+						msgRec.time = new Date();
+						msgRec.type = Constants.UserType.OTHER;
+						msgRec.isRead = false;
+
+						Constants.dbHandler.addNewMsg(msgRec);
+						
+						Constants.allMsgs.add(msgRec);
+						
+						Constants.unread_unknown.remove(i);
+						
+						//add to contacts array
+						boolean present = false;
+						for (Contact c: Constants.allContacts)
+						{
+							if (PhoneNumberUtils.compare(c.number, m.number))
+							{
+								present = true;
+							}
+						}
+						
+						if (!present)
+						{
+							Contact con = Constants.findContact(m.number);
+							Constants.allContacts.add(con);
+						}
+					}
 				}
 
 				adapter = new ChatListAdapter(SMSActivity.this);
