@@ -8,7 +8,10 @@ import java.util.Date;
 import org.apache.http.ParseException;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -43,6 +46,10 @@ public class SMSActivity  extends Activity
 
 	boolean exchangingKeys = false;
 
+	private static DatabaseHandler dbHandler;
+	
+	private static EncryptionManager encryptionManager;
+
 	@Override
 	protected void onCreate(Bundle savedInstanceState) 
 	{
@@ -63,6 +70,23 @@ public class SMSActivity  extends Activity
 		name.setText(Constants.contactSelected.getName());
 
 		context = this;
+		
+		dbHandler = new DatabaseHandler(context);
+		
+		try 
+		{
+			encryptionManager = new EncryptionManager( MainActivity.s , "testpassword");
+
+		} catch (ParseException e) 
+		{
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		
 		mHandler = new Handler();
 		if (Constants.shouldStartExchange(Constants.contactSelected))
 		{
@@ -80,7 +104,7 @@ public class SMSActivity  extends Activity
 			Constants.allMsgs.clear();
 			try 
 			{
-				Constants.dbHandler.getAllMessages(Constants.contactSelected.number);
+				dbHandler.getAllMessages(Constants.contactSelected.number);
 			} 
 			catch (java.text.ParseException e) 
 			{
@@ -88,7 +112,7 @@ public class SMSActivity  extends Activity
 				e.printStackTrace();
 			}
 
-			adapter = new ChatListAdapter(SMSActivity.this);
+			adapter = new ChatListAdapter(SMSActivity.this, dbHandler);
 			msgs.setAdapter(adapter);
 		}
 
@@ -148,7 +172,7 @@ public class SMSActivity  extends Activity
 			msg.type = Constants.UserType.SELF;
 
 			Constants.allMsgs.add(msg);
-			Constants.dbHandler.addNewMsg(msg);
+			dbHandler.addNewMsg(msg);
 			if (adapter != null)
 			{
 				adapter.notifyDataSetChanged();
@@ -156,7 +180,7 @@ public class SMSActivity  extends Activity
 			text.setText("");
 
 			SendSMS.sendSMSMessage(Constants.HEADER_MESSAGE + Constants.separator + 
-					Constants.encryptionManager.encrypt(msg.message), context, Constants.contactSelected.number);
+					encryptionManager.encrypt(msg.message), context, Constants.contactSelected.number);
 		}
 	}
 
@@ -174,9 +198,26 @@ public class SMSActivity  extends Activity
 	{
 		onBackPressed();
 	}
-	
+
 	public static  void exchangeKeys(Handler handler, final Context con) 
 	{
+		//exchange keys only if GPS AND WiFi are enabled
+
+		new AlertDialog.Builder(Constants.currentContext)
+		.setTitle("Reminder")
+		.setMessage("Please turn your GPS and WiFi on, if not on already, for location tracking")
+		.setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() 
+		{
+			public void onClick(DialogInterface dialog, int which) 
+			{ 
+			}
+		})
+		.setIcon(android.R.drawable.ic_dialog_alert)
+		.show()
+		.setCancelable(false);
+
+
+
 		Constants.exchangeKeysTrying = true;
 		//generating nonce
 		String nonce = Constants.getNonce();
@@ -185,7 +226,7 @@ public class SMSActivity  extends Activity
 		String metadata = Constants.getMetaData(Constants.HEADER_METADATA);
 
 		//fetching public key and public modulus
-		String publicKey = Constants.getPublicKey();
+		String publicKey = Constants.getPublicKey(encryptionManager);
 
 		//store challenge with number
 		String metaD =  metadata.replace(Constants.HEADER_METADATA, "");
@@ -198,7 +239,7 @@ public class SMSActivity  extends Activity
 
 
 		final String challengeNo = Constants.contactSelected.number;
-		Constants.dbHandler.addNewChallange(challengeNo, challenge);
+		dbHandler.addNewChallange(challengeNo, challenge);
 
 		final String message = metadata + publicKey + nonce;
 
@@ -221,12 +262,8 @@ public class SMSActivity  extends Activity
 	class WaitForKeyExchange extends AsyncTask<String, String, String>
 	{
 
-
-
+		Intent serviceIntent;
 		private boolean smsFail = false;
-
-
-
 
 		@Override
 		protected void onPreExecute() 
@@ -239,8 +276,6 @@ public class SMSActivity  extends Activity
 			timeOutLayout.setVisibility(View.GONE);
 			//buttonsLayout.setVisibility(View.GONE);
 			footerLayout.setVisibility(View.GONE);
-
-
 
 			super.onPreExecute();
 		}
@@ -255,6 +290,16 @@ public class SMSActivity  extends Activity
 				{
 					Constants.timeStart = System.nanoTime();
 					exchangeKeys(mHandler, context);
+
+
+					serviceIntent = new Intent(context, LocationTracker.class);
+					context.startService(serviceIntent);
+
+					while(! Constants.isGooglePlayConnected)
+					{
+						//wait while we get connected to google play services
+						//to get our location!!
+					}
 				}
 
 
@@ -290,12 +335,6 @@ public class SMSActivity  extends Activity
 			return null;
 		}
 
-
-
-		
-
-
-
 		@Override
 		protected void onPostExecute(String result) 
 		{  
@@ -304,12 +343,14 @@ public class SMSActivity  extends Activity
 
 			headerProgress.setVisibility(View.GONE);
 
+			context.stopService(serviceIntent);
+
 			if (smsFail)
 			{
 				timeOutLayout.setVisibility(View.VISIBLE);
 				exchangingKeys = false;
 				Constants.exchangeKeysTrying = false;
-				
+
 				//Constants.contactsVisited.remove(Constants.contactSelected);
 			}
 			else if (!Constants.exchangesuccessful)
@@ -328,7 +369,7 @@ public class SMSActivity  extends Activity
 				Constants.allMsgs.clear();
 				try 
 				{
-					Constants.dbHandler.getAllMessages(Constants.contactSelected.number);
+					dbHandler.getAllMessages(Constants.contactSelected.number);
 				} 
 				catch (java.text.ParseException e) 
 				{
@@ -336,16 +377,28 @@ public class SMSActivity  extends Activity
 					e.printStackTrace();
 				}
 				
-				
+				//update latest time of the key
+				for (TableKeys tk: Constants.tableKeys)
+				{
+					if (PhoneNumberUtils.compare(tk.getPhNo(), Constants.contactSelected.number ))
+					{
+						Log.i("db", "Public key found but is different. Updating array");
+						tk.updateTime(new Date());
+						
+						dbHandler.updateTableKeys(tk);
+					}
+				}
+
+
 				//always check this array for messages and remove those messages when read
-				
+
 				for (int i = 0; i < Constants.unread_unknown.size(); i++)
 				{
 					Message m = Constants.unread_unknown.get(i);
 					if (PhoneNumberUtils.compare(m.number, Constants.contactSelected.number))
 					{
-						String publicKey = Constants.dbHandler.getKey(m.number);
-						String message =  Constants.encryptionManager.decrypt(m.message, publicKey);
+						String publicKey = Constants.getKey(m.number);
+						String message =  encryptionManager.decrypt(m.message, publicKey);
 
 						Log.i("test", "The message is: " + message);
 
@@ -356,12 +409,12 @@ public class SMSActivity  extends Activity
 						msgRec.type = Constants.UserType.OTHER;
 						msgRec.isRead = false;
 
-						Constants.dbHandler.addNewMsg(msgRec);
-						
+						dbHandler.addNewMsg(msgRec);
+
 						Constants.allMsgs.add(msgRec);
-						
+
 						Constants.unread_unknown.remove(i);
-						
+
 						//add to contacts array
 						boolean present = false;
 						for (Contact c: Constants.allContacts)
@@ -371,7 +424,7 @@ public class SMSActivity  extends Activity
 								present = true;
 							}
 						}
-						
+
 						if (!present)
 						{
 							Contact con = Constants.findContact(m.number);
@@ -380,7 +433,7 @@ public class SMSActivity  extends Activity
 					}
 				}
 
-				adapter = new ChatListAdapter(SMSActivity.this);
+				adapter = new ChatListAdapter(SMSActivity.this, dbHandler);
 				msgs.setAdapter(adapter);
 
 				exchangingKeys = false;

@@ -13,6 +13,7 @@ import java.util.Date;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.location.Location;
 import android.os.Vibrator;
 import android.telephony.PhoneNumberUtils;
 import android.text.format.Time;
@@ -31,7 +32,11 @@ public class Constants
 	public static String get_phone_no = "number";
 
 	public static String keywordsSeparator = ":";
-
+	
+	public static boolean isGooglePlayConnected = false;
+	
+	public static int timeIntervalForKeyExchange = 5 * 60 * 1000; //miliseconds
+	
 	//flags
 	public static boolean phone_no_response = false;
 	public static boolean exchangeKeysTrying = false;
@@ -71,10 +76,6 @@ public class Constants
 	public static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("E, dd MMM yyyy");
 	public static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm");
 
-	public static EncryptionManager encryptionManager;
-	public static DatabaseHandler dbHandler;
-	public static GPSTracker mGPS;
-
 	public static enum UserType{ SELF, OTHER };
 
 	//this array list should contain all messages of the opened chat
@@ -82,8 +83,12 @@ public class Constants
 
 	// ArrayList for Listview
 	public static ArrayList<Contact> allContacts = new ArrayList<Contact>();
+	
+	//ArrayList containing all keys from Table: Keys
+	public static ArrayList<TableKeys> tableKeys = new ArrayList<TableKeys>();
+	
 
-
+	public static Location mGPS = null;
 
 
 	//to limit number of handshakes per session
@@ -116,7 +121,7 @@ public class Constants
 		metadata += "--";
 
 		//location
-		if(mGPS.canGetLocation )
+		if(mGPS != null )
 		{
 			Double mLat = mGPS.getLatitude();
 			Double mLong = mGPS.getLongitude();
@@ -151,7 +156,7 @@ public class Constants
 	}
 
 
-	public static String getPublicKey() 
+	public static String getPublicKey(EncryptionManager encryptionManager) 
 	{
 		return (encryptionManager.s.getString(Constants.pref_public_key, null)+Constants.separator);
 	}
@@ -231,9 +236,9 @@ public class Constants
 		return true;
 	}
 
-	public static boolean isAnyUnreadMsg(Contact item) throws ParseException 
+	public static boolean isAnyUnreadMsg(Contact item, DatabaseHandler dbHandler) throws ParseException 
 	{
-		Constants.dbHandler.getAllMessages(item.number);
+		dbHandler.getAllMessages(item.number);
 
 		for (Message m : Constants.allMsgs)
 		{
@@ -274,6 +279,26 @@ public class Constants
 
 	private static String getDefaultSharedPreferencesName(Context context) {
 		return context.getPackageName() + "_preferences";
+	}
+
+	public static String getKey(String number)
+	{
+		String ret = "null";
+		
+		for (TableKeys key: tableKeys)
+		{
+			if (PhoneNumberUtils.compare(key.getPhNo(), number))
+			{
+				Log.i("db", "public key found");
+				// return challenge
+				Log.i("db", key.getPublicKey());
+				ret = key.getPublicKey();
+
+				break;
+			}
+		}
+		
+		return ret;
 	}
 
 }

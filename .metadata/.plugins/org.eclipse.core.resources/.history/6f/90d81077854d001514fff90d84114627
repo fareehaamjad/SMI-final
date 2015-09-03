@@ -1,0 +1,32 @@
+package com.example.securemobileidentity;
+
+import java.util.ArrayList;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+
+public class KeyExchangeService extends BroadcastReceiver
+{
+	ArrayList<ExchangeServiceParticipant> particpants = new ArrayList<ExchangeServiceParticipant>();
+	
+	
+	@Override
+	public void onReceive(Context context, Intent intent) 
+	{
+		//1- get all keys from the database
+		//2- exchange keys with those which have shouldupdate key set to 1 or true
+		
+		
+		
+	}
+	
+	class ExchangeServiceParticipant
+	{
+		boolean exchangeKeysTrying = false;
+		TableKeys key_table;
+	}
+
+
+
+}

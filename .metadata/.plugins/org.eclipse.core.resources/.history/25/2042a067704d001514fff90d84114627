@@ -1,0 +1,24 @@
+package com.example.securemobileidentity;
+
+import java.text.ParseException;
+import java.util.Date;
+
+public class TableKeys 
+{
+	private int KEY_ID;
+	private String KEY_PH_NO;
+	private String KEY_public_key;
+	private Date KEY_last_update;
+	private int KEY_score;
+	
+	
+	public TableKeys(String id, String ph_no, String pub_key, String date, String score) throws ParseException
+	{
+		KEY_ID = Integer.parseInt(id);
+		KEY_PH_NO = ph_no;
+		KEY_public_key = pub_key;
+		KEY_last_update = Constants.SIMPLE_DATE_FORMAT.parse(date);
+		KEY_score = Integer.parseInt(score);
+	}
+
+}

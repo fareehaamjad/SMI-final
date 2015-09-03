@@ -2,20 +2,20 @@
 <section name="Workbench">
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
 		<item value="false" key="isRegEx"/>
-		<item value="password" key="selection"/>
+		<item value="TABLE_keys" key="selection"/>
 		<item value="false" key="casesensitive"/>
 		<item value="false" key="incremental"/>
 		<item value="true" key="wrap"/>
 		<item value="false" key="wholeword"/>
 		<list key="findhistory">
+			<item value="TABLE_keys"/>
+			<item value="Connected to"/>
+			<item value="handler"/>
 			<item value="password"/>
 			<item value="android:password=&quot;true&quot;"/>
 			<item value="answerRingingCall"/>
 			<item value="encImage"/>
 			<item value="getAESRSA"/>
-			<item value="Base"/>
-			<item value="message length"/>
-			<item value="sendToServer"/>
 		</list>
 		<list key="replacehistory">
 		</list>

@@ -1,0 +1,115 @@
+package com.example.securemobileidentity;
+
+import java.text.ParseException;
+import java.util.Date;
+
+public class TableKeys 
+{
+	private int KEY_ID;
+	private String KEY_PH_NO;
+	private String KEY_public_key;
+	private Date KEY_last_update;
+	private int KEY_score;
+	private boolean KEY_shouldUpdate;
+	private boolean exchangeKeysTrying;
+	
+	
+	public TableKeys(String id, String ph_no, String pub_key, String date, String score, String Key_shouldUpdate, String b) throws ParseException
+	{
+		KEY_ID = Integer.parseInt(id);
+		KEY_PH_NO = ph_no;
+		KEY_public_key = pub_key;
+		KEY_last_update = Constants.SIMPLE_DATE_FORMAT.parse(date);
+		KEY_score = Integer.parseInt(score);
+		
+		if (Key_shouldUpdate.equals("1"))
+		{
+			KEY_shouldUpdate = true;
+		}
+		else
+		{
+			KEY_shouldUpdate = false;
+		}
+		
+		if (b.equals("1"))
+		{
+			exchangeKeysTrying = true;
+		}
+		else
+		{
+			exchangeKeysTrying = false;
+		}
+	
+	}
+	
+	public boolean getexchangeKeysTrying()
+	{
+		return exchangeKeysTrying;
+	}
+	
+	public int getID()
+	{
+		return KEY_ID;
+	}
+	
+	public String getPhNo()
+	{
+		return KEY_PH_NO;
+	}
+	
+	public String getPublicKey()
+	{
+		return KEY_public_key;
+	}
+	
+	public String getlastupdate()
+	{
+		return Constants.SIMPLE_DATE_FORMAT.format(KEY_last_update);
+	}
+	
+	public int getscore()
+	{
+		return KEY_score;
+	}
+
+	public void updatePublicKey(String publicKey) 
+	{
+		KEY_public_key = publicKey;
+	}
+
+	public void updateID(long id) 
+	{
+		KEY_ID = (int) id;
+	}
+
+	public void updateTime(Date date) 
+	{
+		KEY_last_update = date;
+	}
+
+	public String getShouldUpdate()
+	{
+		// TODO Auto-generated method stub
+		if (KEY_shouldUpdate)
+		{
+			return "1";
+		}
+		else
+		{
+			return "0";
+		}
+	}
+	
+	public boolean getShouldUpdate_b()
+	{
+		return KEY_shouldUpdate;
+	}
+	
+	public void updateexchangeKeysTrying(boolean b, DatabaseHandler db)
+	{
+		exchangeKeysTrying = b;
+		
+		db.updateTableKeys(this);
+	}
+
+}

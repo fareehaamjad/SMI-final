@@ -3,9 +3,6 @@ package com.example.securemobileidentity;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Date;
-import java.util.List;
-
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
@@ -30,6 +27,7 @@ public class DatabaseHandler extends SQLiteOpenHelper
 	//private static final String TABLE_bt_challange = "btChallange";
 	//private static final String TABLE_bt_temp_key = "btKeysTemp";
 	private static final String TABLE_keys = "Keys";
+	private static final String TABLE_temp_msgs = "tempMsgs";
 
 
 	// Contacts Table Columns names
@@ -37,12 +35,16 @@ public class DatabaseHandler extends SQLiteOpenHelper
 	private static final String KEY_PH_NO = "phone_number";
 	private static final String KEY_message = "message";
 	private static final String KEY_verify = "verify_metadata_nonce";
-	private static final String KEY_bt_device_name = "bt_device_name";
 	private static final String KEY_public_key = "public_key";
-	private static final String KEY_data_ip = "data_IP";
 	private static final String KEY_TIME = "time";
 	private static final String KEY_USERTYPE = "usertype";
 	private static final String KEY_READ = "isread";
+	private static final String KEY_last_update = "last_updated";
+	private static final String KEY_score = "score";
+	//should update: if you started the key exchange
+	//then this is set to 1 else 0
+	private static final String KEY_shouldUpdate = "should_update";
+	private static final String KEY_exchangeKeysTrying = "exchangeKeysTrying";
 
 	public DatabaseHandler(Context context) 
 	{
@@ -88,8 +90,19 @@ public class DatabaseHandler extends SQLiteOpenHelper
 		String CREATE_STORE_KEYS_TABLE = "CREATE TABLE " + TABLE_keys + "("
 				+ KEY_ID + " INTEGER PRIMARY KEY," 
 				+ KEY_PH_NO + " TEXT,"
-				+ KEY_public_key + " TEXT" + ")";
+				+ KEY_public_key + " TEXT,"
+				+ KEY_last_update + " TEXT,"
+				+ KEY_score + " TEXT,"
+				+ KEY_shouldUpdate +" TEXT,"
+				+ KEY_exchangeKeysTrying +" TEXT"+ ")";
 		db.execSQL(CREATE_STORE_KEYS_TABLE);
+
+
+		String CREATE_TEMP_MSG_TABLE = "CREATE TABLE " + TABLE_temp_msgs + "("
+				+ KEY_ID + " INTEGER PRIMARY KEY," 
+				+ KEY_PH_NO + " TEXT,"
+				+ KEY_message +" TEXT" + ")";
+		db.execSQL(CREATE_TEMP_MSG_TABLE);
 
 
 	}
@@ -104,6 +117,7 @@ public class DatabaseHandler extends SQLiteOpenHelper
 		//db.execSQL("DROP TABLE IF EXISTS " + TABLE_bt_challange);
 		//db.execSQL("DROP TABLE IF EXISTS " + TABLE_bt_temp_key);
 		db.execSQL("DROP TABLE IF EXISTS " + TABLE_keys);
+		db.execSQL("DROP TABLE IF EXISTS " + TABLE_temp_msgs);
 
 		// Create tables again
 		onCreate(db);
@@ -113,8 +127,8 @@ public class DatabaseHandler extends SQLiteOpenHelper
 	public void addNewMsg(Message msg) 
 	{
 		Log.i("db", "db inserting: " + msg.number + "  " + msg.message + "  " + msg.time.toString() + "   " + msg.getUserTypeStr() + "  " + msg.isRead);
-		
-		
+
+
 		SQLiteDatabase db = this.getWritableDatabase();
 
 		ContentValues values = new ContentValues();
@@ -131,32 +145,72 @@ public class DatabaseHandler extends SQLiteOpenHelper
 		}
 		db.close(); // Closing database connection
 	}
-	
+
+	// Adding new temp message for our service
+	public void addNewTempMsg(String phNo, String msg) 
+	{
+		Log.i("db", "db inserting: " +phNo + "  " + msg);
+
+
+		SQLiteDatabase db = this.getWritableDatabase();
+
+		ContentValues values = new ContentValues();
+		values.put(KEY_PH_NO, phNo); // Contact Phone
+		values.put(KEY_message, msg); // message
+
+
+		// Inserting Row
+		if (db.insert(TABLE_temp_msgs, null, values) == -1)
+		{
+			Log.i("db", "db didnt insert the message");
+		}
+		db.close(); // Closing database connection
+	}
+
+
+
+
 	//update read status of a message
 	public void updateStatusOfMsg(Message msg)
 	{
 		Log.i("db", "updating message status");
-		
 
 		SQLiteDatabase db = this.getReadableDatabase();
 
 		ContentValues values = new ContentValues();
 		values.put(KEY_READ, msg.getReadStatus());
-		
+
 		int ret = db.update(TABLE_msg, values, 
-				  KEY_PH_NO + " = ? AND " + KEY_message + " = ? AND " + KEY_TIME + " = ? AND " + KEY_USERTYPE +" = ?" ,
-				  new String[]{msg.number, msg.message , Constants.SIMPLE_DATE_FORMAT.format(msg.time), msg.getUserTypeStr()});
-		
+				KEY_PH_NO + " = ? AND " + KEY_message + " = ? AND " + KEY_TIME + " = ? AND " + KEY_USERTYPE +" = ?" ,
+				new String[]{msg.number, msg.message , Constants.SIMPLE_DATE_FORMAT.format(msg.time), msg.getUserTypeStr()});
+
 		Log.i("db", "no of rows updated are: " + ret);
-		
-		
-		
+
+	}
+
+	//update keys
+	public void updateTableKeys(TableKeys key)
+	{
+		Log.i("db", "updating table keys");
+
+		SQLiteDatabase db = this.getReadableDatabase();
+
+		ContentValues values = new ContentValues();
+		values.put(KEY_last_update, key.getlastupdate());
+		values.put(KEY_score, key.getscore());
+		values.put(KEY_exchangeKeysTrying, key.getexchangeKeysTrying());
+
+		int ret = db.update(TABLE_keys, values, 
+				KEY_ID + " = ? AND " + KEY_PH_NO + " = ?",
+				new String[]{Integer.toString(key.getID()), key.getPhNo()});
+
+		Log.i("db", "no of rows updated are: " + ret); 
 	}
 
 	// Adding new keys[permanent]
-	public void addNewKey(String number, String publicKey) 
+	public void addNewKey(TableKeys key) 
 	{
-
+		long id = -1;
 		SQLiteDatabase db = this.getReadableDatabase();
 
 		Cursor cursor = db.query(TABLE_keys, new String[] { KEY_public_key, KEY_PH_NO }, null, null, null, null, null, null);
@@ -166,11 +220,11 @@ public class DatabaseHandler extends SQLiteOpenHelper
 		{
 			do
 			{
-				if (PhoneNumberUtils.compare(cursor.getString(cursor.getColumnIndex(KEY_PH_NO)), number))
+				if (PhoneNumberUtils.compare(cursor.getString(cursor.getColumnIndex(KEY_PH_NO)), key.getPhNo()))
 				{
 					Log.i("db", "Public key found");
 
-					if (cursor.getString(cursor.getColumnIndex(KEY_public_key)).equalsIgnoreCase(publicKey))
+					if (cursor.getString(cursor.getColumnIndex(KEY_public_key)).equalsIgnoreCase(key.getPublicKey()))
 					{
 						//do nothing
 					}
@@ -180,14 +234,27 @@ public class DatabaseHandler extends SQLiteOpenHelper
 
 
 						ContentValues values = new ContentValues();
-						values.put(KEY_public_key, publicKey);
+						values.put(KEY_public_key, key.getPublicKey() ); // Key
+						values.put(KEY_last_update, key.getlastupdate()); //last updated
+						values.put(KEY_score, key.getscore());//score
+						values.put(KEY_shouldUpdate, key.getShouldUpdate());
+						values.put(KEY_exchangeKeysTrying, key.getexchangeKeysTrying());
 
 						// updating row
 						db.update(TABLE_keys, values, KEY_PH_NO + " = ?",
-								new String[] { number });
+								new String[] { key.getPhNo() });
 
 
 						db.close(); // Closing database connection
+
+						for (TableKeys tk: Constants.tableKeys)
+						{
+							if (PhoneNumberUtils.compare(tk.getPhNo(), key.getPhNo() ))
+							{
+								Log.i("db", "Public key found but is different. Updating array");
+								tk.updatePublicKey(key.getPublicKey());
+							}
+						}
 
 					}
 					present = true;
@@ -201,12 +268,25 @@ public class DatabaseHandler extends SQLiteOpenHelper
 			{
 				Log.i("db", "No public key found; inserting the values in the database");
 				ContentValues values = new ContentValues();
-				values.put(KEY_PH_NO, number); // Contact Phone
-				values.put(KEY_public_key, publicKey); // Key
+				values.put(KEY_PH_NO, key.getPhNo()); // Contact Phone
+				values.put(KEY_public_key, key.getPublicKey() ); // Key
+				values.put(KEY_last_update, key.getlastupdate()); //last updated
+				values.put(KEY_score, key.getscore());//score
+				values.put(KEY_shouldUpdate, key.getShouldUpdate());
+				values.put(KEY_exchangeKeysTrying, key.getexchangeKeysTrying());
+
 
 				// Inserting Row
-				db.insert(TABLE_keys, null, values);
+				id = db.insert(TABLE_keys, null, values);
 				db.close(); // Closing database connection
+
+
+				if (key.getID() != -1)
+				{
+					key.updateID(id);
+
+					Constants.tableKeys.add(key);
+				}
 			}
 
 		}
@@ -214,19 +294,32 @@ public class DatabaseHandler extends SQLiteOpenHelper
 		{
 			Log.i("db", "No public key found; inserting the values in the database");
 			ContentValues values = new ContentValues();
-			values.put(KEY_PH_NO, number); // Contact Phone
-			values.put(KEY_public_key, publicKey); // Key
+			values.put(KEY_PH_NO, key.getPhNo()); // Contact Phone
+			values.put(KEY_public_key, key.getPublicKey()); // Key
+			values.put(KEY_last_update, key.getlastupdate()); //last updated
+			values.put(KEY_score, key.getscore());//score
+			values.put(KEY_shouldUpdate, key.getShouldUpdate());
+			values.put(KEY_exchangeKeysTrying, key.getexchangeKeysTrying());
 
 			// Inserting Row
-			db.insert(TABLE_keys, null, values);
+			id = db.insert(TABLE_keys, null, values);
 			db.close(); // Closing database connection
 
+			if (key.getID() != -1)
+			{
+				key.updateID(id);
+
+				Constants.tableKeys.add(key);
+			}
+
 		}
+
+
 
 	}
 
 
-	//get public Key[permanent]
+	/*//get public Key[permanent]
 	public String getKey(String no)
 	{
 		SQLiteDatabase db = this.getReadableDatabase();
@@ -257,12 +350,12 @@ public class DatabaseHandler extends SQLiteOpenHelper
 		{
 			Log.i("db", "No public key found");
 		}
-		
+
 		db.close(); // Closing database connection
 		return ret;
 
 
-	}
+	}*/
 
 	// Getting All Contacts
 	public void getAllContacts() 
@@ -277,70 +370,159 @@ public class DatabaseHandler extends SQLiteOpenHelper
 		if (cursor.moveToFirst()) {
 			do {
 				String number = cursor.getString(1);
-				
+
 				if (!Constants.isContactRead(number))
 				{
 					Contact c = new Contact(number, number, true);
 					Constants.allContacts.add(c);
 				}
-				
+
 			} while (cursor.moveToNext());
 		}
 
 		db.close(); // Closing database connection
-		
+
 	}
-	
-	
-	// Getting All Messages
-		public void getAllMessages(String number) throws ParseException 
-		{
-			
-			Log.i("test", "Getting all messages for: " + number);
-			
-			// Select All Query
-			String selectQuery = "SELECT  * FROM " + TABLE_msg;
 
-			SQLiteDatabase db = this.getWritableDatabase();
-			Cursor cursor = db.rawQuery(selectQuery, null);
+	// Getting All Keys
+	public void getAllKeys() throws ParseException 
+	{
+		// Select All Query
+		String selectQuery = "SELECT  * FROM " + TABLE_keys;
 
-			int i = 0;
-			// looping through all rows and adding to list
-			if (cursor.moveToFirst()) 
-			{
-				do 
+		SQLiteDatabase db = this.getWritableDatabase();
+		Cursor cursor = db.rawQuery(selectQuery, null);
+
+		// looping through all rows and adding to list
+		if (cursor.moveToFirst()) {
+			do {
+				String number = cursor.getString(1);
+
+				if (!Constants.isContactRead(number))
 				{
-					Log.i("test", "Number db is: " + (cursor.getString(cursor.getColumnIndex(KEY_PH_NO))) + " number is: " + number);
-					
-					
-					if (PhoneNumberUtils.compare(cursor.getString(cursor.getColumnIndex(KEY_PH_NO)), number))
-					{
-						Message msg = new Message();
-						msg.number = cursor.getString(1);
-						msg.message = cursor.getString(2);
-						msg.time = Constants.SIMPLE_DATE_FORMAT.parse(cursor.getString(3));
-						msg.setType(cursor.getString(4));
-						msg.setReadStatus(cursor.getString(5));
-						
-						Constants.allMsgs.add(msg);
-						
-						i++;
-					}
-					// Adding contact to list
-					
-				} while (cursor.moveToNext());
-			}
+					TableKeys k = new TableKeys(cursor.getString(0), cursor.getString(1),
+							cursor.getString(2), cursor.getString(3), cursor.getString(4), 
+							cursor.getString(5), cursor.getString(6));
+					Constants.tableKeys.add(k);
+				}
 
-			Log.i("test", "the count is " + i);
-			
-			Collections.sort(Constants.allMsgs);
-			db.close(); // Closing database connection
-			
+			} while (cursor.moveToNext());
 		}
+
+		db.close(); // Closing database connection
+
+	}
+
+	public void getAllKeysService() throws ParseException 
+	{
+		// Select All Query
+		String selectQuery = "SELECT  * FROM " + TABLE_keys;
+
+		SQLiteDatabase db = this.getWritableDatabase();
+		Cursor cursor = db.rawQuery(selectQuery, null);
+
+		// looping through all rows and adding to list
+		if (cursor.moveToFirst()) {
+			do {
+				String number = cursor.getString(1);
+
+				if (!Constants.isContactRead(number))
+				{
+					TableKeys k = new TableKeys(cursor.getString(0), cursor.getString(1), 
+							cursor.getString(2), cursor.getString(3), cursor.getString(4),
+							cursor.getString(5), cursor.getString(6));
+					
+					KeyExchangeService.participants.add( k );
+				}
+
+			} while (cursor.moveToNext());
+		}
+
+		db.close(); // Closing database connection
+
+	}
+
+
+	// Getting All Messages
+	public void getAllMessages(String number) throws ParseException 
+	{
+
+		Log.i("db", "Getting all messages for: " + number);
+
+		// Select All Query
+		String selectQuery = "SELECT  * FROM " + TABLE_msg;
+
+		SQLiteDatabase db = this.getWritableDatabase();
+		Cursor cursor = db.rawQuery(selectQuery, null);
+
+		int i = 0;
+		// looping through all rows and adding to list
+		if (cursor.moveToFirst()) 
+		{
+			do 
+			{
+				Log.i("db", "Number db is: " + (cursor.getString(cursor.getColumnIndex(KEY_PH_NO))) + " number is: " + number);
+
+
+				if (PhoneNumberUtils.compare(cursor.getString(cursor.getColumnIndex(KEY_PH_NO)), number))
+				{
+					Message msg = new Message();
+					msg.number = cursor.getString(1);
+					msg.message = cursor.getString(2);
+					msg.time = Constants.SIMPLE_DATE_FORMAT.parse(cursor.getString(3));
+					msg.setType(cursor.getString(4));
+					msg.setReadStatus(cursor.getString(5));
+
+					Constants.allMsgs.add(msg);
+
+					i++;
+				}
+				// Adding contact to list
+
+			} while (cursor.moveToNext());
+		}
+
+		Log.i("db", "the count is " + i);
+
+		Collections.sort(Constants.allMsgs);
+		db.close(); // Closing database connection
+
+	}
+
+
+	// Getting All temp Messages and delete them
+	public void getAllTempMessages(ArrayList<Message> allMsgs) throws ParseException 
+	{
+		Log.i("db", "Getting all messages for service ");
+
+		// Select All Query
+		String selectQuery = "SELECT  * FROM " + TABLE_temp_msgs;
+
+		SQLiteDatabase db = this.getWritableDatabase();
+		Cursor cursor = db.rawQuery(selectQuery, null);
+
+		// looping through all rows and adding to list
+		if (cursor.moveToFirst()) 
+		{
+			do 
+			{
+				Message msg = new Message();
+				msg.number = cursor.getString(1);
+				msg.message = cursor.getString(2);
+				allMsgs.add(msg);
+			} while (cursor.moveToNext());
+		}
+
+		db.delete(TABLE_temp_msgs, null, null);
+		Log.i("db", "deleted all rows");
 		
-		
-		
-		
+		db.close(); // Closing database connection
+
+	}
+
+
+
+
 
 	//Adding new challenge
 	public void addNewChallange(String number, String challenge)
@@ -481,7 +663,7 @@ public class DatabaseHandler extends SQLiteOpenHelper
 			{
 				if (PhoneNumberUtils.compare(cursor.getString(cursor.getColumnIndex(KEY_PH_NO)), number))
 				{
-					
+
 					Log.i("db", "Public key found but is different. Updating records");
 
 
@@ -584,6 +766,8 @@ public class DatabaseHandler extends SQLiteOpenHelper
 		}
 
 	}
+
+
 
 
 }

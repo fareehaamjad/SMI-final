@@ -1,11 +1,16 @@
 package com.example.securemobileidentity;
 
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.Date;
 
+import org.apache.http.ParseException;
+
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.telephony.PhoneNumberUtils;
 import android.util.Log;
@@ -15,9 +20,31 @@ public class ProcessMessage
 {
 	static String className = "ProcessMessage";
 
-	public static void addMsg(final Message msg) throws Exception 
+	public static void addMsg(final Message msg, EncryptionManager encryptionManager, DatabaseHandler dbHandler, Context context) throws Exception 
 	{
 		Log.i(className, msg.number);
+		
+		if (encryptionManager == null)
+		{
+			try 
+			{
+				SharedPreferences s = Constants.getDefaultSharedPreferences(context);
+				encryptionManager = new EncryptionManager( s , "testpassword");
+
+			} catch (ParseException e) 
+			{
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		
+		if (dbHandler == null)
+		{
+			dbHandler = new DatabaseHandler(context);
+		}
 
 		//check what the message is about
 		String[] split = msg.message.split(Constants.separator);
@@ -45,7 +72,7 @@ public class ProcessMessage
 						//send a reply: new metadata, new nonce, public key, public modulus, signed metadata + nonce of sender
 						try 
 						{
-							replyMetadata(msg.message);
+							replyMetadata(msg.message, Constants.currentContext, encryptionManager, dbHandler);
 						} catch (Exception e) 
 						{
 							// TODO Auto-generated catch block
@@ -87,11 +114,11 @@ public class ProcessMessage
 			String encChallange = split[index++];
 			Log.i("got encrypted challange",encChallange );
 
-			String challenge = Constants.encryptionManager.decrypt(encChallange, publicKeyOfSender);
+			String challenge = encryptionManager.decrypt(encChallange, publicKeyOfSender);
 
-			String actualChallenge = getChallenge(msg.number);
+			String actualChallenge = getChallenge(msg.number, dbHandler);
 
-			Constants.dbHandler.deleteChallange(msg.number);
+			dbHandler.deleteChallange(msg.number);
 
 			Log.i("challenge",challenge);
 			Log.i("actual challenge", actualChallenge);
@@ -100,14 +127,15 @@ public class ProcessMessage
 			{
 				Log.i("equal", "the challenge and the challenge reply are equal");
 
-				RreplyMetadata(encryptMsg, msg.number);
+				RreplyMetadata(encryptMsg, msg.number, Constants.currentContext, encryptionManager);
 				//DisplayOptions.status.setText("Challenge equal!!");
 				//MainActivity.exchangeKeys = true;
 				//sendPicture(msg.number);
 				//connectionText.setText("Connection established!");
 
 				Constants.timeStart = 0;
-				Constants.dbHandler.addNewKey(msg.number, publicKeyOfSender);
+				dbHandler.addNewKey(new TableKeys("-1", msg.number, publicKeyOfSender, Constants.SIMPLE_DATE_FORMAT.format(new Date()), "-1", "1", "0"));
+
 
 				Constants.exchangesuccessful = true;
 			}
@@ -134,15 +162,15 @@ public class ProcessMessage
 
 			String encChallange = split[index++];
 
-			String publicKey = Constants.dbHandler.getTempKey(msg.number);
+			String publicKey = dbHandler.getTempKey(msg.number);
 
 
-			Constants.dbHandler.deleteTempKey(msg.number);
-			String actualChallenge = getChallenge(msg.number);
+			dbHandler.deleteTempKey(msg.number);
+			String actualChallenge = getChallenge(msg.number, dbHandler);
 
-			String challenge = Constants.encryptionManager.decrypt(encChallange, publicKey);
+			String challenge = encryptionManager.decrypt(encChallange, publicKey);
 
-			Constants.dbHandler.deleteChallange(msg.number);
+			dbHandler.deleteChallange(msg.number);
 
 			Log.i("challenge",challenge);
 			Log.i("actual challenge", actualChallenge);
@@ -154,8 +182,8 @@ public class ProcessMessage
 
 				//Toast.makeText(context,"Challenge equal!!", Toast.LENGTH_LONG).show();
 				//MainActivity.exchangeKeys = true;
-				//connectionText.setText("Connection established!");
-				Constants.dbHandler.addNewKey(msg.number, publicKey);
+				//connectionText.setText("Connection established!");			
+				dbHandler.addNewKey(new TableKeys("-1", msg.number, publicKey, Constants.SIMPLE_DATE_FORMAT.format(new Date()), "-1", "0", "0"));
 
 				Constants.exchangesuccessful = true;
 
@@ -183,7 +211,7 @@ public class ProcessMessage
 			// Vibrate for 500 milliseconds
 			Constants.viberate.vibrate(500);
 
-			String publicKey = Constants.dbHandler.getKey(msg.number);
+			String publicKey = Constants.getKey(msg.number);
 
 			if (publicKey.equalsIgnoreCase("null"))
 			{
@@ -240,7 +268,7 @@ public class ProcessMessage
 			}
 			else
 			{
-				String message =  Constants.encryptionManager.decrypt(msg.message, publicKey);
+				String message =  encryptionManager.decrypt(msg.message, publicKey);
 
 				Log.i("test", "The message is: " + message);
 
@@ -251,7 +279,7 @@ public class ProcessMessage
 				msgRec.type = Constants.UserType.OTHER;
 				msgRec.isRead = false;
 
-				Constants.dbHandler.addNewMsg(msgRec);
+				dbHandler.addNewMsg(msgRec);
 
 				if (Constants.isChatOpen)
 				{
@@ -264,7 +292,7 @@ public class ProcessMessage
 						SMSActivity.adapter.notifyDataSetChanged();
 
 						msgRec.isRead = true;
-						Constants.dbHandler.updateStatusOfMsg(msgRec);
+						dbHandler.updateStatusOfMsg(msgRec);
 					}
 				}
 
@@ -281,30 +309,65 @@ public class ProcessMessage
 
 	}
 
-	private static void RreplyMetadata(String encryptMsg, String number) throws Exception 
+	//3rd
+	static void RreplyMetadata(String encryptMsg, String number, Context context, EncryptionManager encryptionManager) throws Exception 
 	{
 		Log.i("This is what is being encrypted here", encryptMsg);
 		//encrypt using the user's own public key
-		String encoded = Constants.encryptionManager.encrypt(encryptMsg);
+		String encoded = encryptionManager.encrypt(encryptMsg);
 		Log.i("Encoded string", encoded);
 
 		String msg = Constants.HEADER_VERIFY_META +Constants.separator + encoded;
 
-		SendSMS.sendSMSMessage(msg, MainActivity.context, number);
+		SendSMS.sendSMSMessage(msg, context, number);
 		//sendLongSMS(msg, number) ;     
 	}
 
 
-	private static String getChallenge(String number) 
+	static String getChallenge(String number, DatabaseHandler dbHandler) 
 	{
-		return Constants.dbHandler.getChallenge(number);
+		return dbHandler.getChallenge(number);
 	}
 
-	static void replyMetadata(String message) throws Exception 
+	//first step
+	public static  void sendMetaData(final Context con, DatabaseHandler dbHandler, EncryptionManager encryptionManager) 
+	{
+		Constants.exchangeKeysTrying = true;
+		//generating nonce
+		String nonce = Constants.getNonce();
+
+		//generating meta-data
+		String metadata = Constants.getMetaData(Constants.HEADER_METADATA);
+
+		//fetching public key and public modulus
+		String publicKey = Constants.getPublicKey(encryptionManager);
+
+		//store challenge with number
+		String metaD =  metadata.replace(Constants.HEADER_METADATA, "");
+
+		Log.i("meta after replacing", metaD);
+
+		String challenge = metaD + "," + nonce;
+		challenge = challenge.replace(Constants.separator, "");
+
+		final String challengeNo = Constants.contactSelected.number;
+		dbHandler.addNewChallange(challengeNo, challenge);
+
+		final String message = metadata + publicKey + nonce;
+
+		Log.i("message to send", message);
+
+
+		SendSMS.sendSMSMessage(message, con, challengeNo);
+
+	}
+
+	//2nd step
+	static void replyMetadata(String message, Context context,  EncryptionManager encryptionManager, DatabaseHandler dbHandler) throws Exception 
 	{
 		String metadata = Constants.getMetaData(Constants.HEADER_REPLY_METADATA);
 		String _nonce = Constants.getNonce();
-		String rep_metadata = metadata + Constants.getPublicKey() + _nonce;
+		String rep_metadata = metadata + Constants.getPublicKey(encryptionManager) + _nonce;
 
 		String[] split = message.split(Constants.separator);
 
@@ -321,9 +384,27 @@ public class ProcessMessage
 		Log.i("This is what is being encrypted here", encryptMsg);
 		//encrypt using the user's own public key
 		String encoded = null;
+
+		if (encryptionManager == null)
+		{
+			try 
+			{
+				SharedPreferences s = Constants.getDefaultSharedPreferences(context);
+				encryptionManager = new EncryptionManager( s , "testpassword");
+
+			} catch (ParseException e) 
+			{
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+
 		try 
 		{
-			encoded = Constants.encryptionManager.encrypt(encryptMsg);
+			encoded = encryptionManager.encrypt(encryptMsg);
 		} catch (UnsupportedEncodingException e) {
 
 			e.printStackTrace();
@@ -333,7 +414,7 @@ public class ProcessMessage
 		Log.i("After encryption", encoded);
 
 
-		String publicKeyOfSender = Constants.getPublicKey();
+		String publicKeyOfSender = Constants.getPublicKey(encryptionManager);
 		publicKeyOfSender = publicKeyOfSender.replaceFirst(Constants.separator, "");
 
 
@@ -349,15 +430,20 @@ public class ProcessMessage
 		challenge = challenge.replace(Constants.separator, "");
 
 		String challengeNo = fromNo;
-		Constants.dbHandler.addNewChallange(challengeNo, challenge);
+		
+		if (dbHandler == null)
+		{
+			dbHandler = new DatabaseHandler(context);
+		}
+		dbHandler.addNewChallange(challengeNo, challenge);
 
 		//storing keys temp
-		Constants.dbHandler.AddNewTempKeys(fromNo, pub);
+		dbHandler.AddNewTempKeys(fromNo, pub);
 
 		Log.i("Replying metadata", rep_metadata);
 		Log.i("Replying to", fromNo);
 
-		SendSMS.sendSMSMessage(rep_metadata, MainActivity.context, fromNo);
+		SendSMS.sendSMSMessage(rep_metadata, context, fromNo);
 
 	}
 

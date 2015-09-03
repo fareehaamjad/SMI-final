@@ -1,0 +1,420 @@
+package com.example.securemobileidentity;
+
+import java.io.IOException;
+import java.security.SecureRandom;
+import java.util.Calendar;
+import java.util.Date;
+
+import org.apache.http.ParseException;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.os.Handler;
+import android.telephony.PhoneNumberUtils;
+import android.text.format.Time;
+import android.util.Log;
+import android.view.KeyEvent;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+public class SMSActivity  extends Activity 
+{
+	String className = "SMSActivity";
+
+	WaitForKeyExchange mTask = null;
+
+	LinearLayout headerProgress, displayMessage, noOfferMessage, footerLayout, timeOutLayout;  //buttonsLayout
+
+	TextView name;
+	EditText text;
+
+	static Context context;
+	private static Handler mHandler;
+
+	ListView msgs;
+
+	public static ChatListAdapter adapter = null;
+
+	boolean exchangingKeys = false;
+
+	@Override
+	protected void onCreate(Bundle savedInstanceState) 
+	{
+		super.onCreate(savedInstanceState);
+		setContentView(R.layout.sms_activity);
+
+		headerProgress = (LinearLayout) findViewById(R.id.linlaHeaderProgress);
+		displayMessage = (LinearLayout) findViewById(R.id.ll_top);
+		noOfferMessage = (LinearLayout) findViewById(R.id.ll_displayTextFail);
+		timeOutLayout  = (LinearLayout) findViewById(R.id.ll_timeOut);
+		//buttonsLayout  = (LinearLayout) findViewById(R.id.ll_ok);
+		footerLayout   = (LinearLayout) findViewById(R.id.ll_bottom);
+		msgs = (ListView) findViewById(R.id.lv_list_view);
+
+		name = (TextView) findViewById(R.id.tv_name);
+		text = (EditText) findViewById(R.id.et_text);
+		text.setText("");
+		name.setText(Constants.contactSelected.getName());
+
+		context = this;
+		mHandler = new Handler();
+		if (Constants.shouldStartExchange(Constants.contactSelected))
+		{
+			startExchange();
+
+		}
+		else
+		{
+			headerProgress.setVisibility(View.GONE);
+			displayMessage.setVisibility(View.VISIBLE);
+			noOfferMessage.setVisibility(View.GONE);
+			timeOutLayout.setVisibility(View.GONE);
+			footerLayout.setVisibility(View.VISIBLE);
+
+			Constants.allMsgs.clear();
+			try 
+			{
+				Constants.dbHandler.getAllMessages(Constants.contactSelected.number);
+			} 
+			catch (java.text.ParseException e) 
+			{
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+			adapter = new ChatListAdapter(SMSActivity.this);
+			msgs.setAdapter(adapter);
+		}
+
+	}
+
+	@Override
+	public void onResume()
+	{
+		Constants.isChatOpen = true;
+		Log.i("test", "ischatopen true");
+
+		Constants.currentContext = this;
+		super.onResume();
+	}
+
+	@Override
+	public void onPause()
+	{
+		Constants.isChatOpen = false;
+		Log.i("test", "ischatopen false");
+		super.onPause();
+	}
+
+	@Override
+	public boolean onKeyDown(int keyCode, KeyEvent event) 
+	{
+		if ( exchangingKeys )
+		{
+			if (keyCode == KeyEvent.KEYCODE_BACK) 
+			{
+				//preventing default implementation previous to android.os.Build.VERSION_CODES.ECLAIR
+				return true;
+			}
+			else if (keyCode == KeyEvent.KEYCODE_MENU)
+			{
+				return true;
+			}
+
+		}
+
+		return super.onKeyDown(keyCode, event); 
+
+	}
+
+	public void sendMsg(View v) throws Exception
+	{
+		if (text.getText().toString().equals(""))
+		{
+			Toast.makeText(context, "No content!", Toast.LENGTH_SHORT).show();
+		}
+		else
+		{
+			Message msg = new Message();
+			msg.message = text.getText().toString();
+			msg.number = Constants.contactSelected.number;
+			msg.time = new Date();
+			msg.type = Constants.UserType.SELF;
+
+			Constants.allMsgs.add(msg);
+			Constants.dbHandler.addNewMsg(msg);
+			if (adapter != null)
+			{
+				adapter.notifyDataSetChanged();
+			}
+			text.setText("");
+
+			SendSMS.sendSMSMessage(Constants.HEADER_MESSAGE + Constants.separator + 
+					Constants.encryptionManager.encrypt(msg.message), context, Constants.contactSelected.number);
+		}
+	}
+
+	private void startExchange() 
+	{
+		if ( mTask != null ) 
+		{
+			mTask.cancel(true);
+		}
+
+		mTask = (WaitForKeyExchange) new WaitForKeyExchange().execute();
+	}
+
+	public void goBack(View v)
+	{
+		onBackPressed();
+	}
+	
+	public static  void exchangeKeys(Handler handler, final Context con) 
+	{
+		//exchange keys only if GPS AND WiFi are enabled
+		
+		new AlertDialog.Builder(Constants.currentContext)
+		.setTitle("Reminder")
+		.setMessage("Please turn your GPS and WiFi on, if not on already, to get your location")
+		.setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() 
+		{
+			public void onClick(DialogInterface dialog, int which) 
+			{ 
+			}
+		})
+		.setIcon(android.R.drawable.ic_dialog_alert)
+		.show()
+		.setCancelable(false);
+		
+		
+		
+		Constants.exchangeKeysTrying = true;
+		//generating nonce
+		String nonce = Constants.getNonce();
+
+		//generating meta-data
+		String metadata = Constants.getMetaData(Constants.HEADER_METADATA);
+
+		//fetching public key and public modulus
+		String publicKey = Constants.getPublicKey();
+
+		//store challenge with number
+		String metaD =  metadata.replace(Constants.HEADER_METADATA, "");
+
+		Log.i("meta after replacing", metaD);
+
+		String challenge = metaD + "," + nonce;
+		challenge = challenge.replace(Constants.separator, "");
+
+
+
+		final String challengeNo = Constants.contactSelected.number;
+		Constants.dbHandler.addNewChallange(challengeNo, challenge);
+
+		final String message = metadata + publicKey + nonce;
+
+		Log.i("message to send", message);
+
+		handler.post(new Runnable() { // This thread runs in the UI
+			@Override
+			public void run() {
+
+
+				SendSMS.sendSMSMessage(message, con, challengeNo);
+			}
+		});
+
+
+
+	}
+
+
+	class WaitForKeyExchange extends AsyncTask<String, String, String>
+	{
+
+
+
+		private boolean smsFail = false;
+
+
+
+
+		@Override
+		protected void onPreExecute() 
+		{    
+			// SHOW THE SPINNER WHILE LOADING FEEDS
+			exchangingKeys = true;
+			headerProgress.setVisibility(View.VISIBLE);
+			displayMessage.setVisibility(View.GONE);
+			noOfferMessage.setVisibility(View.GONE);
+			timeOutLayout.setVisibility(View.GONE);
+			//buttonsLayout.setVisibility(View.GONE);
+			footerLayout.setVisibility(View.GONE);
+
+
+
+			super.onPreExecute();
+		}
+
+
+		@Override
+		protected String doInBackground(String... arg0) 
+		{
+			try 
+			{	
+				if ( !Constants.exchangeKeysTrying )
+				{
+					Constants.timeStart = System.nanoTime();
+					exchangeKeys(mHandler, context);
+				}
+
+
+				while (Constants.exchangeKeysTrying)
+				{
+					long now = System.nanoTime();
+					long time = now - Constants.timeStart;
+
+					//wait for 3 minutes
+					long t = (3 * 60 * 1000000000L);
+
+					if (time >= t)
+					{
+						//android.util.Log.i("time", "difference is greater");
+						smsFail  = true;
+						break;
+					}
+
+
+
+
+					Thread.sleep(1000);
+				}
+
+			} catch (Exception e) 
+			{
+				e.printStackTrace();
+			}
+
+
+
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+
+
+		
+
+
+
+		@Override
+		protected void onPostExecute(String result) 
+		{  
+			String funcName = "onPostExecute";
+			Log.i(className, funcName);
+
+			headerProgress.setVisibility(View.GONE);
+
+			if (smsFail)
+			{
+				timeOutLayout.setVisibility(View.VISIBLE);
+				exchangingKeys = false;
+				Constants.exchangeKeysTrying = false;
+				
+				//Constants.contactsVisited.remove(Constants.contactSelected);
+			}
+			else if (!Constants.exchangesuccessful)
+			{
+				noOfferMessage.setVisibility(View.VISIBLE);
+				exchangingKeys = false;
+				Constants.exchangeKeysTrying = false;
+			}
+			else
+			{
+				displayMessage.setVisibility(View.VISIBLE);
+				footerLayout.setVisibility(View.VISIBLE);
+
+				Constants.contactsVisited.add(Constants.contactSelected);
+
+				Constants.allMsgs.clear();
+				try 
+				{
+					Constants.dbHandler.getAllMessages(Constants.contactSelected.number);
+				} 
+				catch (java.text.ParseException e) 
+				{
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				
+				
+				//always check this array for messages and remove those messages when read
+				
+				for (int i = 0; i < Constants.unread_unknown.size(); i++)
+				{
+					Message m = Constants.unread_unknown.get(i);
+					if (PhoneNumberUtils.compare(m.number, Constants.contactSelected.number))
+					{
+						String publicKey = Constants.dbHandler.getKey(m.number);
+						String message =  Constants.encryptionManager.decrypt(m.message, publicKey);
+
+						Log.i("test", "The message is: " + message);
+
+						Message msgRec = new Message();
+						msgRec.message = message;
+						msgRec.number = m.number;
+						msgRec.time = new Date();
+						msgRec.type = Constants.UserType.OTHER;
+						msgRec.isRead = false;
+
+						Constants.dbHandler.addNewMsg(msgRec);
+						
+						Constants.allMsgs.add(msgRec);
+						
+						Constants.unread_unknown.remove(i);
+						
+						//add to contacts array
+						boolean present = false;
+						for (Contact c: Constants.allContacts)
+						{
+							if (PhoneNumberUtils.compare(c.number, m.number))
+							{
+								present = true;
+							}
+						}
+						
+						if (!present)
+						{
+							Contact con = Constants.findContact(m.number);
+							Constants.allContacts.add(con);
+						}
+					}
+				}
+
+				adapter = new ChatListAdapter(SMSActivity.this);
+				msgs.setAdapter(adapter);
+
+				exchangingKeys = false;
+
+			}
+
+
+
+
+			super.onPostExecute(result);
+
+		}
+
+
+	}
+
+}

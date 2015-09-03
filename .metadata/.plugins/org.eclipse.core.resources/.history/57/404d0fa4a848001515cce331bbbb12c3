@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <item name="textColor" type="color">#000000</item>
-    <color name="textShadow">#FFF</color>
-    <color name="blue">#33B5E5</color>
-</resources>

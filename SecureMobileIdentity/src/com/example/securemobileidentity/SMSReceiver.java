@@ -66,7 +66,7 @@ public class SMSReceiver extends BroadcastReceiver
 				{
 					try 
 					{
-						ProcessMessage.addMsg(mesg);
+						ProcessMessage.addMsg(mesg, null, null);
 					} catch (Exception e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -87,15 +87,16 @@ public class SMSReceiver extends BroadcastReceiver
 					Constants.msgRec = mesg;
 					if (header.equals(Constants.HEADER_METADATA))
 					{
-						showNotificationHandshake(context); 
+						//showNotificationHandshake(context);
+						saveInDB(context, mesg.number, mesg.message);
 					}
 					else if (header.equals(Constants.HEADER_REPLY_METADATA))
 					{
-						//do nothing
+						saveInDB(context, mesg.number, mesg.message);
 					}
 					else if (header.equals(Constants.HEADER_VERIFY_META))
 					{
-						//do nothing
+						saveInDB(context, mesg.number, mesg.message);
 					}
 					else
 					{
@@ -117,6 +118,14 @@ public class SMSReceiver extends BroadcastReceiver
 
 
 
+	}
+
+	private void saveInDB(Context con, String phNo, String msg) 
+	{
+		DatabaseHandler db = new DatabaseHandler(con);
+		
+		Log.i("sms r", "Message saved in the temp db");
+		db.addNewTempMsg(phNo, msg);
 	}
 
 	private void showNotificationHandshake(Context context) 

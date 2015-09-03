@@ -1,0 +1,14 @@
+package com.example.securemobileidentity;
+
+public class ExchangeServiceParticipant
+{
+
+	boolean exchangeKeysTrying = false;
+	TableKeys key_table;
+
+
+	public ExchangeServiceParticipant(TableKeys k) 
+	{
+		key_table = k;
+	}
+}

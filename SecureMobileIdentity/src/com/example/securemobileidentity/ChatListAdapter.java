@@ -22,12 +22,14 @@ import org.apache.http.impl.cookie.DateUtils;
 {
 
 	private Context context;
+	
+	DatabaseHandler dbHandler;
 
 
-	public ChatListAdapter(Context context) 
+	public ChatListAdapter(Context context, DatabaseHandler db) 
 	{
 		this.context = context;
-
+		dbHandler = db;
 	}
 
 
@@ -103,7 +105,7 @@ import org.apache.http.impl.cookie.DateUtils;
 			message.isRead = true;
 			
 			Constants.allMsgs.get(position).isRead = true;
-			Constants.dbHandler.updateStatusOfMsg(Constants.allMsgs.get(position));
+			dbHandler.updateStatusOfMsg(Constants.allMsgs.get(position));
 		}
 		
 		

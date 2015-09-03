@@ -1,2 +1,2 @@
 eclipse.preferences.version=1
-task-tag-projects-already-scanned=SecureMessaging,andoidCrypto,android-support-v7-appcompat,SecurePictureTransfer,compression,SecureMobileIdentity,appcompat_v7,TestADB,MessageActivity
+task-tag-projects-already-scanned=SecureMessaging,andoidCrypto,android-support-v7-appcompat,SecurePictureTransfer,compression,SecureMobileIdentity,appcompat_v7,TestADB,MessageActivity,google-play-services_lib

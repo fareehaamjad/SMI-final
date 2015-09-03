@@ -25,12 +25,16 @@ public class CustomListViewAdapter extends ArrayAdapter<Contact> implements Sect
 	private String[] sections;
 
 	Context context;
+	
+	DatabaseHandler dbHandler;
 
-	public CustomListViewAdapter(Context _context, int contactRow, ArrayList<Contact> items) 
+	public CustomListViewAdapter(Context _context, int contactRow, ArrayList<Contact> items, DatabaseHandler db) 
 	{
 		super(_context, contactRow, items);
 
 		context = _context;
+		dbHandler = db;
+		
 		alphaIndexer = new HashMap<String, Integer>();
 		for (int i = 0; i < items.size(); i++)
 		{
@@ -90,7 +94,7 @@ public class CustomListViewAdapter extends ArrayAdapter<Contact> implements Sect
 		
 		try 
 		{
-			if (Constants.isAnyUnreadMsg(rowItem))
+			if (Constants.isAnyUnreadMsg(rowItem, dbHandler))
 			{
 				holder.showUnread.setVisibility(View.VISIBLE);
 			}
@@ -121,7 +125,7 @@ public class CustomListViewAdapter extends ArrayAdapter<Contact> implements Sect
 		}
 
 
-		mainListView.setAdapter( new CustomListViewAdapter(context, R.layout.contact_row, newRow) );     
+		mainListView.setAdapter( new CustomListViewAdapter(context, R.layout.contact_row, newRow, dbHandler) );     
 
 	}
 

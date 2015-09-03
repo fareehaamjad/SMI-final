@@ -1,0 +1,156 @@
+package com.example.securemobileidentity;
+
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Date;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.util.Log;
+
+public class KeyExchangeService extends BroadcastReceiver
+{
+	static ArrayList<TableKeys> participants = new ArrayList<TableKeys>();
+	Context context;
+
+	static ArrayList<Message> allMsgs = new ArrayList<Message>();
+
+	@Override
+	public void onReceive(Context con, Intent intent) 
+	{
+		context = con;
+
+		//1- get all keys from the database
+		//2- exchange keys with those which have shouldupdate key set to 1 or true &&
+		//                         exchangeKeysTrying != true
+		//3- get all messages from database to check for replies
+
+		DatabaseHandler dbHandler = new DatabaseHandler(context);
+		participants.clear();
+		try 
+		{
+			dbHandler.getAllKeysService();
+		} 
+		catch (ParseException e) 
+		{
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+
+		for (TableKeys p: participants)
+		{
+			if (p.getShouldUpdate_b() && (!p.getexchangeKeysTrying()) )
+			{
+				p.updateexchangeKeysTrying(true);
+				startExchange(p);
+			}
+		}
+
+		try 
+		{
+			dbHandler.getAllTempMessages(allMsgs);
+		} 
+		catch (ParseException e) 
+		{
+			e.printStackTrace();
+		}
+
+		for (Message msg: allMsgs)
+		{
+			processMessage(msg);
+		}
+
+	}
+
+
+	private void processMessage(Message msg) 
+	{
+		//check what the message is about
+		String[] split = msg.message.split(Constants.separator);
+		int index = 0;
+
+		String header = split[index++];
+		if (header.equals(Constants.HEADER_METADATA))
+		{
+			Log.i("metadata", "Got meta-data    " +msg.message);
+			try 
+			{
+				ProcessMessage.replyMetadata(msg.message, context);
+			} catch (Exception e) 
+			{
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		else if (header.equals(Constants.HEADER_REPLY_METADATA))
+		{
+			Log.i("reply meta data msg", msg.message);
+			
+			//metadata
+			String encryptMsg = split[index++];
+			//publickey
+			String publicKeyOfSender = split[index++];
+			//nonce
+			encryptMsg += ",";
+			encryptMsg += split[index++];
+
+			//the encrytpted challenge reply
+			String encChallange = split[index++];
+			Log.i("got encrypted challange",encChallange );
+
+			String challenge = Constants.encryptionManager.decrypt(encChallange, publicKeyOfSender);
+
+			String actualChallenge = ProcessMessage.getChallenge(msg.number);
+
+			Constants.dbHandler.deleteChallange(msg.number);
+
+			Log.i("challenge",challenge);
+			Log.i("actual challenge", actualChallenge);
+
+			if (actualChallenge.equals(challenge))
+			{
+				Log.i("equal", "the challenge and the challenge reply are equal");
+
+				ProcessMessage.RreplyMetadata(encryptMsg, msg.number);
+				
+				Constants.dbHandler.addNewKey(new TableKeys("-1", msg.number, publicKeyOfSender, Constants.SIMPLE_DATE_FORMAT.format(new Date()), "-1", "1"));
+
+
+				Constants.exchangesuccessful = true;
+			}
+			else
+			{
+
+				Constants.timeStart = 0;
+
+				//DisplayOptions.status.setText("Challenge NOT equal!!");
+				Log.i("not equal", "the challenge and the challenge reply are not equal");
+
+
+				Constants.exchangesuccessful = false;
+				//exchangeKeys = false;
+			}
+
+
+			Constants.exchangeKeysTrying = false;
+		}
+		else if (header.equals(Constants.HEADER_VERIFY_META))
+		{
+			
+		}
+	}
+
+
+	private void startExchange(TableKeys p) 
+	{
+		p.exchangeKeysTrying = true;
+
+		ProcessMessage.sendMetaData(context);
+	}
+
+
+
+
+}

@@ -1,0 +1,52 @@
+package com.example.securemobileidentity;
+
+import java.text.ParseException;
+import java.util.ArrayList;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+
+public class KeyExchangeService extends BroadcastReceiver
+{
+	ArrayList<ExchangeServiceParticipant> participants = new ArrayList<ExchangeServiceParticipant>();
+	
+	
+	@Override
+	public void onReceive(Context context, Intent intent) 
+	{
+		//1- get all keys from the database
+		//2- exchange keys with those which have shouldupdate key set to 1 or true
+		
+		DatabaseHandler dbHandler = new DatabaseHandler(context);
+		
+		try 
+		{
+			dbHandler.getAllKeys(participants);
+		} 
+		catch (ParseException e) 
+		{
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		
+		
+	}
+	
+	class ExchangeServiceParticipant
+	{
+		
+		boolean exchangeKeysTrying = false;
+		TableKeys key_table;
+		
+		
+		public ExchangeServiceParticipant(TableKeys k) 
+		{
+			key_table = k;
+		}
+	}
+
+
+
+}
